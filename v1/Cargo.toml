@@ -2,7 +2,8 @@
 name = "dlopen_on_fork"
 version = "0.1.0"
 authors = ["Jeff Dileo <jeff.dileo@nccgroup.com>"]
-edition = "2018"
+#edition = "2018"
+edition = "2021"
 build = "build.rs"
 
 [lib]
@@ -11,8 +12,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = "0.2" # for types only
-syscall = "0.2.1"
+#syscall = "0.2.1"
 cstr_core = { version = "0.1.2" }
+ctor = "0.2.8"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

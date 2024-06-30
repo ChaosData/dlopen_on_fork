@@ -1,5 +1,6 @@
 /*
 Copyright (c) 2019 NCC Group.
+Copyright (c) 2024 Jeff Dileo.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -24,7 +25,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #![no_std]
-#![feature(lang_items, linkage, asm)]
+//#![feature(lang_items, linkage, asm)]
+#![feature(lang_items, linkage)]
 #![allow(non_camel_case_types)]
 #![allow(unused_unsafe)]
 #![allow(non_snake_case)]
@@ -34,6 +36,16 @@ mod fallback;
 use fallback::*;
 
 extern crate libc; // for types only
+
+use core::arch::asm;
+
+//#![cfg_attr(feature = "used_linker", feature(used_with_arg))]
+// Prevent a spurious 'unused_imports' warning
+//#[allow(unused_imports)]
+#[macro_use]
+extern crate ctor;
+
+
  
 /*
 extern crate alloc;
@@ -44,12 +56,30 @@ fn alloc_error(_layout: core::alloc::Layout) -> ! {
 }
 */
 
-#[macro_use]
-extern crate syscall;
+//#[macro_use]
+//extern crate syscall;
+
+pub const WRITE : usize = 1;
 
 fn write(fd: usize, buf: &[u8]) -> usize {
   unsafe {
-    syscall!(WRITE, fd, buf.as_ptr(), buf.len())
+    //syscall!(WRITE, fd, buf.as_ptr(), buf.len())
+    let ret : usize;
+    /*asm!("syscall" : "={rax}"(ret)
+         : "{rax}"(WRITE), "{rdi}"(fd), "{rsi}"(buf.as_ptr()), "{rdx}"(buf.len())
+         : "rcx", "r11", "memory"
+         : "volatile");
+    */
+    asm!(
+      "syscall",
+      inout("rax") WRITE => ret,
+      in("rdi") fd,
+      in("rsi") buf.as_ptr(),
+      in("rdx") buf.len(),
+      out("rcx") _,
+      out("r11") _
+    );
+    ret
   }
 }
 
@@ -144,32 +174,32 @@ pub struct rtld_global {
 const RTLD_LAZY: i32 = 0x1;
 
 extern "C" {
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static printf: *const c_void;
   //extern fn(format: *const c_char, ...) -> i32;
 
 
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static _rtld_global: *const rtld_global;
 
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static dlerror: *const c_void;
   // extern fn() -> *const cstr_core::c_char;
 
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static dlopen: *const c_void;
   // extern fn(filename: *const c_char, flags: i32) -> *const link_map;
 
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static dlsym: *const c_void;
   // extern fn(handle: *const c_void, symbol: *const c_char) -> *const c_void;
 
-  #[no_mangle]
+  //#[no_mangle]
   #[linkage="extern_weak"]
   static getenv: *const c_void;
   // extern fn(name: *const c_char) -> *const c_char;
@@ -309,11 +339,16 @@ pub fn yolo_dlopen(filename: *const c_char, flags: usize) -> *const link_map {
       jmp 1b
       3:
       nop
-      "#
-      : "={rax}"(ret) // outputs
-      : "r"(ret_addr), "r"(dlopen_addr), "r"(filename), "r"(flags) // inputs
-      : "rdi", "rsi", "rcx", "memory" // clobbers
-      : "volatile" // options
+      "#,
+      out("rax") ret,
+      inout("rdi") ret_addr => _,
+      inout("rsi") dlopen_addr => _,
+      in("rdx") filename,
+      inout("rcx") flags => _
+//      : "={rax}"(ret) // outputs
+//      : "r"(ret_addr), "r"(dlopen_addr), "r"(filename), "r"(flags) // inputs
+//      : "rdi", "rsi", "rcx", "memory" // clobbers
+//      : "volatile" // options
     );
   }
   //printf!(b"ret: %p\n\0", ret);
@@ -384,9 +419,11 @@ unsafe fn _fork() -> i32 {
   }
 }
 
-pub extern "C" fn init() {
-  //unsafe { write(1, b"pub extern fn init()\n\0"); }
-
+//#[no_mangle]
+//pub extern "C" fn myinit() {
+#[ctor]
+fn myinit() {
+  //printf!(b"init()\n\0");
   if unsafe { dlopen as usize } == 0 {
     printf!(b"dlopen not found\n\0");
     return
@@ -545,9 +582,13 @@ unsafe extern "C" fn bcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32
   0
 }
 
+
+/*
 #[used]
 #[link_section = ".ctors"]
-pub static CONSTRUCTOR: extern fn() = init;
+#[no_mangle]
+pub static CONSTRUCTOR: extern fn() = myinit;
+*/
 
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() { }
